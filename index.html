@@ -1,0 +1,1568 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>캠퍼스 AED 구조 미션 · 1인칭 3D 시뮬레이션</title>
+<style>
+:root{--ink:#17283b;--blue:#245b85;--red:#d94343;--cream:#f4f1e8}
+*{box-sizing:border-box}
+html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#0f1d2a;font-family:system-ui,-apple-system,"Malgun Gothic",sans-serif;color:#fff;user-select:none}
+#game{position:fixed;inset:0;background:#102233}
+canvas{display:block;width:100%;height:100%;touch-action:none}
+
+/* 조준점 */
+.crosshair{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:4;pointer-events:none;width:20px;height:20px;display:flex;align-items:center;justify-content:center}
+.crosshair::before,.crosshair::after{content:"";position:absolute;background:rgba(255,255,255,0.85);border-radius:999px;box-shadow:0 0 6px rgba(0,0,0,0.6)}
+.crosshair::before{width:2px;height:14px}
+.crosshair::after{width:14px;height:2px}
+.crosshair.active::before,.crosshair.active::after{background:#ffd16b}
+
+/* HUD */
+.hud{position:fixed;z-index:3;left:clamp(10px,2vw,24px);top:clamp(10px,2vh,20px);display:flex;gap:10px;align-items:flex-start;pointer-events:none;flex-wrap:wrap}
+.panel{background:rgba(14,31,47,.84);border:1px solid rgba(255,255,255,.18);border-radius:15px;padding:11px 14px;box-shadow:0 8px 24px rgba(0,0,0,.35);backdrop-filter:blur(8px)}
+.brand{font-size:10.5px;letter-spacing:.16em;color:#9fc6df;font-weight:800}
+.mission{font-size:18px;font-weight:900;margin-top:3px}
+.objective{font-size:15px;font-weight:700;color:#e6f1f8;margin-top:6px;max-width:360px;line-height:1.48}
+.status{display:flex;gap:8px;align-items:center;font-size:14.5px;font-weight:800}
+.dot{width:8px;height:8px;border-radius:50%;background:#ffc85a;box-shadow:0 0 10px #ffc85a}
+.mode-badge{display:inline-block;padding:2px 8px;border-radius:6px;font-size:11px;font-weight:800;margin-left:6px;vertical-align:middle}
+.mode-badge.before{background:#64748b;color:#fff}
+.mode-badge.after{background:#e64b4b;color:#fff}
+
+.right{position:fixed;right:clamp(10px,2vw,24px);top:clamp(10px,2vh,20px);display:flex;gap:8px;z-index:5;flex-wrap:wrap;justify-content:flex-end}
+.ui-btn{border:1px solid rgba(255,255,255,.28);background:rgba(16,40,61,.85);color:#fff;border-radius:11px;padding:9px 12px;font-weight:750;font-size:12px;cursor:pointer;transition:.15s}
+.ui-btn:hover{background:#1d4466}
+.ui-btn.switch-btn{background:#d94343;border-color:#ff9494}
+.ui-btn.switch-btn.is-before{background:#3b5978;border-color:#93b8de}
+
+/* 3D NPC 말풍선 오버레이 */
+#bubbles{position:fixed;inset:0;z-index:2;pointer-events:none;overflow:hidden}
+.npc-bubble{position:absolute;transform:translate(-50%,-100%);background:rgba(255,255,255,.97);color:#0f172a;border:2.5px solid #64748b;border-radius:16px;padding:11px 18px;font-size:18px;font-weight:900;white-space:nowrap;box-shadow:0 10px 26px rgba(0,0,0,.38);line-height:1.3}
+.npc-bubble.impressed{background:#fff1f2;color:#be123c;border-color:#e11d48}
+.npc-bubble::after{content:"";position:absolute;left:50%;bottom:-9px;transform:translateX(-50%);border-width:9px 9px 0;border-style:solid;border-color:rgba(255,255,255,.97) transparent transparent transparent}
+.npc-bubble.impressed::after{border-top-color:#fff1f2}
+.npc-tag{position:absolute;transform:translate(-50%,0);background:rgba(15,29,42,.85);color:#f8fafc;padding:4px 11px;border-radius:8px;font-size:14px;font-weight:850;white-space:nowrap;border:1px solid rgba(255,255,255,.16);box-shadow:0 4px 12px rgba(0,0,0,.25)}
+
+/* 하단 조작 힌트 & 프롬프트 */
+.prompt-box{position:fixed;left:50%;top:62%;transform:translateX(-50%);z-index:4;background:rgba(15,35,52,.94);border:1.5px solid rgba(255,209,107,.85);color:#ffe699;padding:12px 24px;border-radius:999px;font-size:17px;font-weight:900;display:none;pointer-events:none;box-shadow:0 10px 26px rgba(0,0,0,.48)}
+.hint{position:fixed;left:50%;bottom:clamp(12px,2.4vh,26px);transform:translateX(-50%);z-index:3;background:rgba(16,40,61,.92);border:1px solid rgba(255,255,255,.28);border-radius:999px;padding:11px 22px;font-size:14.5px;font-weight:800;white-space:nowrap;box-shadow:0 8px 24px rgba(0,0,0,.4)}
+.hint b{color:#ffd16b}
+
+#toast{position:fixed;left:50%;top:17%;transform:translate(-50%,-10px);opacity:0;transition:.25s;z-index:6;background:rgba(19,44,64,.96);border:1.5px solid rgba(255,255,255,.32);border-radius:15px;padding:15px 24px;font-weight:850;font-size:18px;line-height:1.45;text-align:center;pointer-events:none;max-width:min(92vw,680px);box-shadow:0 12px 34px rgba(0,0,0,.5)}
+#toast.show{opacity:1;transform:translate(-50%,0)}
+
+/* 미니맵 */
+#minimap{position:fixed;left:20px;bottom:20px;z-index:3;width:154px;height:142px;border-radius:12px;background:rgba(20,44,64,.86);border:1px solid rgba(255,255,255,.24);box-shadow:0 8px 24px rgba(0,0,0,.35);pointer-events:none}
+
+/* 오버레이 모달 */
+.overlay{position:fixed;inset:0;z-index:12;background:linear-gradient(125deg,rgba(11,28,44,.93),rgba(21,54,74,.88));display:flex;align-items:center;justify-content:center;padding:20px}
+.modal{width:min(650px,94vw);background:#f8f7f2;color:#1c2e3d;border-radius:22px;padding:clamp(22px,4vw,36px);box-shadow:0 24px 80px rgba(0,0,0,.55)}
+.eyebrow{font-size:11px;letter-spacing:.18em;color:#39739a;font-weight:900}
+.modal h1{font-size:clamp(23px,3.8vw,34px);line-height:1.2;margin:10px 0}
+.modal p{color:#506170;line-height:1.62;font-size:13.8px}
+.steps{display:grid;grid-template-columns:repeat(3,1fr);gap:9px;margin:14px 0}
+.step{background:#e9eff1;border-radius:12px;padding:11px;font-size:12px;font-weight:750;line-height:1.42}
+.step strong{display:block;color:#d34545;font-size:11px;margin-bottom:4px}
+.mode-select{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:16px 0}
+.mode-card{border:2px solid #cbd5e1;background:#fff;border-radius:14px;padding:13px;cursor:pointer;text-align:left;transition:.15s}
+.mode-card:hover{border-color:#64748b}
+.mode-card.active{border-color:#245b85;background:#eef5fa;box-shadow:0 4px 14px rgba(36,91,133,.15)}
+.mode-card.active.after-card{border-color:#d94343;background:#fdf2f2;box-shadow:0 4px 14px rgba(217,67,67,.15)}
+.mode-card .tag{display:inline-block;font-size:10.5px;font-weight:800;padding:3px 8px;border-radius:6px;margin-bottom:5px;background:#e2e8f0;color:#334155}
+.mode-card.active .tag{background:#245b85;color:#fff}
+.mode-card.active.after-card .tag{background:#d94343;color:#fff}
+.mode-card h3{margin:0 0 4px;font-size:14.5px;color:#1e293b}
+.mode-card p{margin:0;font-size:11.8px;line-height:1.42;color:#475569}
+.primary{width:100%;border:0;border-radius:12px;padding:14px;background:#245b85;color:#fff;font-size:14.5px;font-weight:850;cursor:pointer}
+.result-box{background:#e9eff1;border-radius:12px;padding:13px;margin:12px 0;display:flex;justify-content:space-around;text-align:center}
+.result-box div span{display:block;font-size:11px;color:#506170;font-weight:700;margin-bottom:3px}
+.result-box div strong{font-size:18px;color:#1c2e3d}
+#complete{display:none}
+@media(max-width:720px){
+  .steps,.mode-select{grid-template-columns:1fr}
+  .hint{font-size:11px;white-space:normal;max-width:76vw;text-align:center}
+  #minimap{width:116px;height:108px;left:12px;bottom:64px}
+}
+</style>
+</head>
+<body>
+<div id="game">
+  <canvas id="c3d"></canvas>
+  <div id="bubbles"></div>
+  <div class="crosshair" id="crosshair"></div>
+  <div class="prompt-box" id="promptBox"></div>
+
+  <div class="hud">
+    <div class="panel">
+      <div class="brand">CAMPUS SAFETY · 1ST PERSON 3D AED MISSION</div>
+      <div class="mission">1인칭 응급대응 <span class="mode-badge after" id="modeBadge">개선된 안내체계</span></div>
+      <div class="objective" id="objective">학생회관 1층에서 쓰러진 학생을 발견했습니다. AED를 찾아 환자에게 전달하세요.</div>
+    </div>
+    <div class="panel status"><span class="dot"></span><span id="phase">목표 1 / 2 · AED 찾기</span></div>
+    <div class="panel status"><span>경과 시간: <b id="timer">0.0초</b></span></div>
+  </div>
+
+  <div class="right">
+    <button class="ui-btn switch-btn" id="toggleMode" type="button">버전 전환 (현재: 개선 후)</button>
+    <button class="ui-btn" id="reset" type="button">다시 시작</button>
+  </div>
+
+  <div id="toast"></div>
+  <canvas id="minimap" width="154" height="142"></canvas>
+  <div class="hint" id="hint">이동 <b>WASD / 방향키</b> · 시점 회전 <b>마우스 드래그 / 좌우(Q,E) / 클릭 시점고정</b> · 상호작용 <b>F / 스페이스</b></div>
+
+  <!-- 시작 모달 -->
+  <div class="overlay" id="intro">
+    <div class="modal">
+      <div class="eyebrow">FIRST-PERSON 3D CAMPUS SIMULATION</div>
+      <h1>1인칭 시점으로 캠퍼스 AED를 찾아보세요.</h1>
+      <p id="introDesc">학생회관 1층 로비에서 학생이 쓰러졌습니다. 실제 1인칭 시야처럼 기둥과 가벽을 지나며 AED를 찾고 환자에게 전달하세요.</p>
+
+      <div class="mode-select">
+        <div class="mode-card" id="cardBefore">
+          <span class="tag">BEFORE · 기존 안내체계</span>
+          <h3>안내 표지 적용 전</h3>
+          <p>방향 표지와 바닥 유도선이 없고, 엉뚱한 홍보물과 흰색 안전함들이 있어 시야에서 찾기 어렵습니다.</p>
+        </div>
+        <div class="mode-card active after-card" id="cardAfter">
+          <span class="tag">AFTER · 개선된 안내체계</span>
+          <h3>벽면·바닥 유도 디자인 적용 후</h3>
+          <p>눈높이 벽면 안내판과 바닥 유도 스티커가 이어져 1인칭 시점에서도 길을 쉽게 따라갈 수 있습니다.</p>
+        </div>
+      </div>
+
+      <div class="steps">
+        <div class="step"><strong>MISSION 01</strong>AED를 찾아 가까이 가서 상호작용합니다.</div>
+        <div class="step"><strong>MISSION 02</strong>로비 중앙 환자에게 돌아가 전달합니다.</div>
+        <div class="step"><strong>1인칭 조작</strong>WASD 이동, 마우스 드래그/좌우키 시점, F 상호작용</div>
+      </div>
+      <button class="primary" id="start">1인칭 3D 미션 시작하기</button>
+    </div>
+  </div>
+
+  <!-- 완료 모달 -->
+  <div class="overlay" id="complete">
+    <div class="modal">
+      <div class="eyebrow">MISSION COMPLETE</div>
+      <h1 id="completeTitle">AED를 환자에게 전달했습니다.</h1>
+      <div class="result-box">
+        <div><span>적용된 안내체계</span><strong id="resMode">개선된 안내체계 (After)</strong></div>
+        <div><span>총 구조 소요 시간</span><strong id="resTime">0.0초</strong></div>
+      </div>
+      <p>1인칭 시야에서는 고개를 돌리거나 시선이 방해물·홍보물에 가려질 때 탐색 시간이 크게 늘어날 수 있습니다. 이동 경로를 잇는 안내 표지와 바닥 유도가 초기 대응 속도를 좌우합니다.</p>
+      <div class="steps">
+        <div class="step"><strong>01 · 신고</strong>119 신고 및 주변에 도움 요청</div>
+        <div class="step"><strong>02 · AED</strong>전원을 켜고 음성 안내에 따르기</div>
+        <div class="step"><strong>03 · CPR</strong>안내에 따라 심폐소생술 지속</div>
+      </div>
+      <div style="display:flex;gap:10px;margin-top:12px">
+        <button class="primary" id="switchAndAgain" style="background:#d94343">다른 버전으로 바로 비교 체험하기</button>
+        <button class="primary" id="again">현재 버전 다시 하기</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Three.js (ES Module via CDN) -->
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+
+const canvas = document.getElementById('c3d');
+const bubblesLayer = document.getElementById('bubbles');
+const miniCanvas = document.getElementById('minimap');
+const miniCtx = miniCanvas.getContext('2d');
+
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color('#142636');
+scene.fog = new THREE.Fog('#142636', 24, 58);
+
+const camera = new THREE.PerspectiveCamera(72, window.innerWidth / window.innerHeight, 0.1, 100);
+
+// 조명
+const hemiLight = new THREE.HemisphereLight('#f4f8fb', '#7a8790', 1.15);
+scene.add(hemiLight);
+
+const dirLight = new THREE.DirectionalLight('#fff8eb', 1.05);
+dirLight.position.set(14, 24, 16);
+dirLight.castShadow = true;
+dirLight.shadow.mapSize.set(1024, 1024);
+dirLight.shadow.camera.near = 2;
+dirLight.shadow.camera.far = 65;
+const d = 26;
+dirLight.shadow.camera.left = -d;
+dirLight.shadow.camera.right = d;
+dirLight.shadow.camera.top = d;
+dirLight.shadow.camera.bottom = -d;
+scene.add(dirLight);
+
+// 월드 좌표계 스케일: 기존 2D (1320 x 860) -> 3D (44m x 29m), 1m = 30px
+const WORLD_W = 44;
+const WORLD_D = 29;
+const SCALE_2D_TO_3D = 1 / 30;
+const EYE_HEIGHT = 1.65;
+
+function to3DX(x2d) { return x2d * SCALE_2D_TO_3D - WORLD_W / 2; }
+function to3DZ(y2d) { return y2d * SCALE_2D_TO_3D - WORLD_D / 2; }
+
+// 텍스처 생성 헬퍼 (안내판 / 바닥 스티커 / 벽면)
+function makeSignTexture(badgeText, dirText, bgColor = '#ffffff', accentColor = '#d94343') {
+  const c = document.createElement('canvas');
+  c.width = 512; c.height = 160;
+  const g = c.getContext('2d');
+  g.fillStyle = bgColor;
+  g.fillRect(0, 0, 512, 160);
+  g.strokeStyle = accentColor;
+  g.lineWidth = 12;
+  g.strokeRect(6, 6, 500, 148);
+
+  // AED 붉은 배지
+  g.fillStyle = accentColor;
+  g.beginPath();
+  g.roundRect(24, 28, 170, 104, 16);
+  g.fill();
+
+  g.fillStyle = '#ffffff';
+  g.font = '900 54px system-ui, sans-serif';
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.fillText(badgeText, 109, 82);
+
+  // 방향 텍스트
+  g.fillStyle = accentColor;
+  g.font = '800 46px system-ui, sans-serif';
+  g.textAlign = 'left';
+  g.fillText(dirText, 215, 82);
+
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+function makeFloorDecalTexture(label) {
+  const c = document.createElement('canvas');
+  c.width = 512; c.height = 180;
+  const g = c.getContext('2d');
+  g.fillStyle = '#ffffff';
+  g.beginPath();
+  g.roundRect(12, 12, 488, 156, 24);
+  g.fill();
+  g.strokeStyle = '#d94343';
+  g.lineWidth = 12;
+  g.beginPath();
+  g.roundRect(12, 12, 488, 156, 24);
+  g.stroke();
+
+  g.fillStyle = '#d94343';
+  g.font = '900 52px system-ui, sans-serif';
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.fillText(label, 256, 92);
+
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+function makePosterTexture(title, bg, fg) {
+  const c = document.createElement('canvas');
+  c.width = 512; c.height = 160;
+  const g = c.getContext('2d');
+  g.fillStyle = bg;
+  g.fillRect(0, 0, 512, 160);
+  g.fillStyle = fg;
+  g.font = '800 44px system-ui, sans-serif';
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.fillText(title, 256, 82);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+function makeZoneLabelTexture(title) {
+  const c = document.createElement('canvas');
+  c.width = 512; c.height = 128;
+  const g = c.getContext('2d');
+  g.fillStyle = 'rgba(248, 250, 252, 0.92)';
+  g.beginPath();
+  g.roundRect(16, 16, 480, 96, 18);
+  g.fill();
+  g.fillStyle = '#244156';
+  g.font = '800 42px system-ui, sans-serif';
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.fillText(title, 256, 66);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+// 바닥 및 천장
+const floorGeo = new THREE.PlaneGeometry(WORLD_W, WORLD_D);
+const floorMat = new THREE.MeshStandardMaterial({ color: '#e6e2d8', roughness: 0.75 });
+const floorMesh = new THREE.Mesh(floorGeo, floorMat);
+floorMesh.rotation.x = -Math.PI / 2;
+floorMesh.receiveShadow = true;
+scene.add(floorMesh);
+
+// 중앙 로비 통로 바닥
+const lobbyFloor = new THREE.Mesh(
+  new THREE.PlaneGeometry(23.3, WORLD_D - 1.6),
+  new THREE.MeshStandardMaterial({ color: '#d6e2e4', roughness: 0.7 })
+);
+lobbyFloor.rotation.x = -Math.PI / 2;
+lobbyFloor.position.set(0, 0.01, 0);
+lobbyFloor.receiveShadow = true;
+scene.add(lobbyFloor);
+
+// 타일 그리드 라인
+const gridHelper = new THREE.GridHelper(WORLD_W, 28, '#cfc9bc', '#d8d3c8');
+gridHelper.position.y = 0.015;
+scene.add(gridHelper);
+
+// 벽체 및 장애물 데이터 (2D 좌표 기반)
+const wallDefs2D = [
+  [0,0,1320,26],[0,834,1320,26],[0,0,26,860],[1294,0,26,860],
+  [26,44,270,18],[26,62,18,210],[278,62,18,210],
+  [26,650,240,18],[26,668,18,166],[248,668,18,166],
+  [1024,44,270,18],[1024,62,18,210],[1276,62,18,210],
+  [1054,650,240,18],[1054,668,18,166],[1276,668,18,166],
+  [420,26,22,125],[878,26,22,125],
+  [350,280,22,175],
+  [948,280,22,175],
+  [948,280,135,20]
+];
+
+const wallMat = new THREE.MeshStandardMaterial({ color: '#b5c3c5', roughness: 0.65 });
+const wallGroup = new THREE.Group();
+const colliders = []; // {minX, maxX, minZ, maxZ}
+
+wallDefs2D.forEach(([x, y, w, h]) => {
+  const height = 3.6;
+  const bw = w * SCALE_2D_TO_3D;
+  const bd = h * SCALE_2D_TO_3D;
+  const cx = (x + w / 2) * SCALE_2D_TO_3D - WORLD_W / 2;
+  const cz = (y + h / 2) * SCALE_2D_TO_3D - WORLD_D / 2;
+
+  const mesh = new THREE.Mesh(new THREE.BoxGeometry(bw, height, bd), wallMat);
+  mesh.position.set(cx, height / 2, cz);
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  wallGroup.add(mesh);
+
+  colliders.push({
+    minX: cx - bw / 2,
+    maxX: cx + bw / 2,
+    minZ: cz - bd / 2,
+    maxZ: cz + bd / 2
+  });
+});
+scene.add(wallGroup);
+
+// 구역 안내 표지 (방 입구 위쪽)
+function addZoneSign(label, x2d, y2d) {
+  const tex = makeZoneLabelTexture(label);
+  const sign = new THREE.Mesh(
+    new THREE.PlaneGeometry(3.4, 0.85),
+    new THREE.MeshBasicMaterial({ map: tex, transparent: true })
+  );
+  sign.position.set(to3DX(x2d), 2.55, to3DZ(y2d));
+  scene.add(sign);
+}
+addZoneSign('학생회 사무실', 160, 275);
+addZoneSign('강의실 101', 1160, 275);
+addZoneSign('휴게 공간', 145, 648);
+addZoneSign('행정실', 1175, 648);
+
+// 가구 / 장애물 생성
+const obstacles2D = [
+  {x:395,y:175,w:115,h:48,type:'desk'},
+  {x:810,y:175,w:115,h:48,type:'desk'},
+  {x:615,y:105,w:90,h:38,type:'notice'},
+  {x:75,y:430,w:74,h:36,type:'bench'},
+  {x:1170,y:460,w:74,h:36,type:'bench'},
+  {x:310,y:545,w:52,h:52,type:'plant'},
+  {x:958,y:545,w:52,h:52,type:'plant'},
+  {x:1120,y:345,w:56,h:42,type:'vending'},
+  {x:150,y:345,w:56,h:42,type:'vending'}
+];
+
+obstacles2D.forEach(o => {
+  const bw = o.w * SCALE_2D_TO_3D;
+  const bd = o.h * SCALE_2D_TO_3D;
+  const cx = (o.x + o.w / 2) * SCALE_2D_TO_3D - WORLD_W / 2;
+  const cz = (o.y + o.h / 2) * SCALE_2D_TO_3D - WORLD_D / 2;
+
+  if (o.type === 'desk' || o.type === 'bench') {
+    const h = o.type === 'desk' ? 0.95 : 0.65;
+    const m = new THREE.Mesh(
+      new THREE.BoxGeometry(bw, h, bd),
+      new THREE.MeshStandardMaterial({ color: '#9c7353', roughness: 0.7 })
+    );
+    m.position.set(cx, h / 2, cz);
+    m.castShadow = true;
+    m.receiveShadow = true;
+    scene.add(m);
+    colliders.push({ minX: cx - bw / 2, maxX: cx + bw / 2, minZ: cz - bd / 2, maxZ: cz + bd / 2 });
+  } else if (o.type === 'plant') {
+    const pot = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.45, 0.36, 0.55, 12),
+      new THREE.MeshStandardMaterial({ color: '#a37752' })
+    );
+    pot.position.set(cx, 0.275, cz);
+    pot.castShadow = true;
+    scene.add(pot);
+
+    const crown = new THREE.Mesh(
+      new THREE.DodecahedronGeometry(0.75, 0),
+      new THREE.MeshStandardMaterial({ color: '#4f8564', roughness: 0.8 })
+    );
+    crown.position.set(cx, 1.05, cz);
+    crown.castShadow = true;
+    scene.add(crown);
+    colliders.push({ minX: cx - 0.5, maxX: cx + 0.5, minZ: cz - 0.5, maxZ: cz + 0.5 });
+  } else if (o.type === 'vending') {
+    const h = 1.85;
+    const m = new THREE.Mesh(
+      new THREE.BoxGeometry(bw, h, bd),
+      new THREE.MeshStandardMaterial({ color: '#5b758e', roughness: 0.5 })
+    );
+    m.position.set(cx, h / 2, cz);
+    m.castShadow = true;
+    scene.add(m);
+    colliders.push({ minX: cx - bw / 2, maxX: cx + bw / 2, minZ: cz - bd / 2, maxZ: cz + bd / 2 });
+  } else if (o.type === 'notice') {
+    const board = new THREE.Mesh(
+      new THREE.BoxGeometry(bw, 1.35, 0.2),
+      new THREE.MeshStandardMaterial({ color: '#8f694a' })
+    );
+    board.position.set(cx, 1.45, cz);
+    board.castShadow = true;
+    scene.add(board);
+    colliders.push({ minX: cx - bw / 2, maxX: cx + bw / 2, minZ: cz - 0.25, maxZ: cz + 0.25 });
+  }
+});
+
+// 개선 후(After) vs 기존(Before) 안내 표지/바닥 유도선 그룹
+const improvedGuidesGroup = new THREE.Group();
+const beforeDistractorsGroup = new THREE.Group();
+scene.add(improvedGuidesGroup);
+scene.add(beforeDistractorsGroup);
+
+// 개선 후 3D 벽면 안내판 (눈높이 ~2.15m)
+const wallSigns = [
+  { x: 745, y: 52, badge: 'AED', dir: '우측 →', rotY: 0 },
+  { x: 935, y: 270, badge: 'AED', dir: '우회전 ↘', rotY: 0 },
+  { x: 1085, y: 270, badge: 'AED', dir: '직진 →', rotY: 0 }
+];
+wallSigns.forEach(s => {
+  const tex = makeSignTexture(s.badge, s.dir);
+  const plane = new THREE.Mesh(
+    new THREE.PlaneGeometry(2.3, 0.72),
+    new THREE.MeshBasicMaterial({ map: tex, side: THREE.DoubleSide })
+  );
+  plane.position.set(to3DX(s.x), 2.15, to3DZ(s.y));
+  plane.rotation.y = s.rotY;
+  improvedGuidesGroup.add(plane);
+});
+
+// 개선 후 3D 바닥 유도 스티커
+const floorDecalsData = [
+  { x: 730, y: 465, label: '♥ AED →', rotZ: 0 },
+  { x: 885, y: 495, label: '♥ AED ↗', rotZ: -0.2 },
+  { x: 1030, y: 395, label: '♥ AED ↑', rotZ: Math.PI / 2 },
+  { x: 1120, y: 315, label: '♥ AED →', rotZ: 0 }
+];
+floorDecalsData.forEach(d => {
+  const tex = makeFloorDecalTexture(d.label);
+  const decal = new THREE.Mesh(
+    new THREE.PlaneGeometry(2.1, 0.74),
+    new THREE.MeshBasicMaterial({ map: tex, transparent: true })
+  );
+  decal.rotation.x = -Math.PI / 2;
+  decal.rotation.z = d.rotZ;
+  decal.position.set(to3DX(d.x), 0.03, to3DZ(d.y));
+  improvedGuidesGroup.add(decal);
+});
+
+// 기존 안내체계 전용 시선 분산 홍보물
+const distractors = [
+  { x: 966, y: 270, label: '축제 부스 모집!', bg: '#e07a9a', fg: '#ffffff' },
+  { x: 386, y: 270, label: '분실물 센터 안내', bg: '#5a968e', fg: '#ffffff' }
+];
+distractors.forEach(p => {
+  const tex = makePosterTexture(p.label, p.bg, p.fg);
+  const m = new THREE.Mesh(
+    new THREE.PlaneGeometry(2.2, 0.7),
+    new THREE.MeshBasicMaterial({ map: tex, side: THREE.DoubleSide })
+  );
+  m.position.set(to3DX(p.x), 2.0, to3DZ(p.y));
+  beforeDistractorsGroup.add(m);
+});
+
+// 3D AED 보관함 모델 (우측 복도 가벽 뒤편)
+const AED_2D = { x: 1225, y: 295 };
+const aedGroup = new THREE.Group();
+aedGroup.position.set(to3DX(AED_2D.x), 0, to3DZ(AED_2D.y));
+scene.add(aedGroup);
+
+const cabinetBody = new THREE.Mesh(
+  new THREE.BoxGeometry(0.95, 1.55, 0.45),
+  new THREE.MeshStandardMaterial({ color: '#f3f2ec', roughness: 0.45 })
+);
+cabinetBody.position.y = 1.05;
+cabinetBody.castShadow = true;
+aedGroup.add(cabinetBody);
+
+const aedFrontTex = makeSignTexture('AED', '충격기', '#ffffff', '#d94343');
+const aedFrontPlane = new THREE.Mesh(
+  new THREE.PlaneGeometry(0.84, 0.45),
+  new THREE.MeshBasicMaterial({ map: aedFrontTex })
+);
+aedFrontPlane.position.set(0, 1.32, 0.235);
+aedGroup.add(aedFrontPlane);
+
+const aedBeacon = new THREE.Mesh(
+  new THREE.OctahedronGeometry(0.28, 0),
+  new THREE.MeshStandardMaterial({ color: '#e64b4b', emissive: '#b82525', emissiveIntensity: 0.45 })
+);
+aedBeacon.position.set(0, 2.25, 0);
+aedGroup.add(aedBeacon);
+
+// 기존 버전용 헷갈리는 안전함(좌측 구석 및 AED 위쪽)
+const fakeBox1 = new THREE.Mesh(
+  new THREE.BoxGeometry(0.9, 1.35, 0.42),
+  new THREE.MeshStandardMaterial({ color: '#e6e8e4', roughness: 0.6 })
+);
+fakeBox1.position.set(to3DX(70), 0.7, to3DZ(315));
+beforeDistractorsGroup.add(fakeBox1);
+
+const fakeBox2 = new THREE.Mesh(
+  new THREE.BoxGeometry(0.9, 1.25, 0.42),
+  new THREE.MeshStandardMaterial({ color: '#e6e8e4', roughness: 0.6 })
+);
+fakeBox2.position.set(to3DX(1242), 2.55, to3DZ(235));
+beforeDistractorsGroup.add(fakeBox2);
+
+// 환자 3D 모델 (로비 중앙에 쓰러진 학생)
+const PATIENT_2D = { x: 660, y: 420, name: '환자' };
+const patientGroup = new THREE.Group();
+patientGroup.position.set(to3DX(PATIENT_2D.x), 0, to3DZ(PATIENT_2D.y));
+scene.add(patientGroup);
+
+const pSkin = new THREE.MeshStandardMaterial({ color: '#e8b892', roughness: 0.65 });
+const pShirt = new THREE.MeshStandardMaterial({ color: '#4f759b', roughness: 0.7 });
+const pPants = new THREE.MeshStandardMaterial({ color: '#2b394a', roughness: 0.75 });
+const pHair = new THREE.MeshStandardMaterial({ color: '#1e293b', roughness: 0.75 });
+
+const lyingBody = new THREE.Group();
+lyingBody.rotation.set(0, 0.25, -Math.PI / 2);
+lyingBody.position.set(-0.2, 0.18, 0);
+patientGroup.add(lyingBody);
+
+const pTorso = new THREE.Mesh(new THREE.CapsuleGeometry(0.18, 0.44, 10, 14), pShirt);
+pTorso.scale.set(1.1, 1.0, 0.75);
+pTorso.position.y = 0.3;
+pTorso.castShadow = true;
+lyingBody.add(pTorso);
+
+[-0.1, 0.1].forEach(lx => {
+  const pLeg = new THREE.Mesh(new THREE.CapsuleGeometry(0.075, 0.52, 8, 12), pPants);
+  pLeg.position.set(lx, -0.25, 0);
+  pLeg.castShadow = true;
+  lyingBody.add(pLeg);
+});
+
+[-0.23, 0.23].forEach((ax, i) => {
+  const pArm = new THREE.Mesh(new THREE.CapsuleGeometry(0.055, 0.40, 8, 12), pShirt);
+  pArm.position.set(ax, 0.28, 0.05);
+  pArm.rotation.z = i === 0 ? 0.35 : -0.45;
+  lyingBody.add(pArm);
+});
+
+const pHead = new THREE.Mesh(new THREE.SphereGeometry(0.195, 20, 18), pSkin);
+pHead.position.set(0, 0.76, 0);
+pHead.castShadow = true;
+lyingBody.add(pHead);
+
+const pHairCap = new THREE.Mesh(new THREE.SphereGeometry(0.205, 18, 14, 0, Math.PI * 2, 0, Math.PI * 0.55), pHair);
+pHairCap.position.set(0, 0.78, -0.02);
+pHairCap.rotation.x = -0.3;
+lyingBody.add(pHairCap);
+
+// 곁에서 무릎 꿇고 살피는 학생
+const helperGroup = new THREE.Group();
+helperGroup.position.set(to3DX(PATIENT_2D.x) - 0.85, 0, to3DZ(PATIENT_2D.y) - 0.55);
+helperGroup.rotation.y = 0.65;
+scene.add(helperGroup);
+
+const hSkin = new THREE.MeshStandardMaterial({ color: '#f2caa8', roughness: 0.62 });
+const hShirt = new THREE.MeshStandardMaterial({ color: '#d99b52', roughness: 0.65 });
+const hPants = new THREE.MeshStandardMaterial({ color: '#334155', roughness: 0.72 });
+
+const hTorso = new THREE.Mesh(new THREE.CapsuleGeometry(0.18, 0.40, 10, 14), hShirt);
+hTorso.scale.set(1.1, 1.0, 0.76);
+hTorso.position.set(0, 0.68, 0.08);
+hTorso.rotation.x = 0.32;
+hTorso.castShadow = true;
+helperGroup.add(hTorso);
+
+[-0.1, 0.1].forEach(lx => {
+  const hLeg = new THREE.Mesh(new THREE.CapsuleGeometry(0.075, 0.36, 8, 12), hPants);
+  hLeg.position.set(lx, 0.22, -0.08);
+  hLeg.rotation.x = 1.25;
+  helperGroup.add(hLeg);
+});
+
+[-0.22, 0.22].forEach(ax => {
+  const hArm = new THREE.Mesh(new THREE.CapsuleGeometry(0.055, 0.38, 8, 12), hShirt);
+  hArm.position.set(ax, 0.56, 0.24);
+  hArm.rotation.x = -0.65;
+  helperGroup.add(hArm);
+});
+
+const hHead = new THREE.Mesh(new THREE.SphereGeometry(0.195, 20, 18), hSkin);
+hHead.position.set(0, 1.05, 0.20);
+hHead.rotation.x = 0.35;
+hHead.castShadow = true;
+helperGroup.add(hHead);
+
+const hHair = new THREE.Mesh(new THREE.SphereGeometry(0.205, 18, 14, 0, Math.PI * 2, 0, Math.PI * 0.52), pHair);
+hHair.position.set(0, 1.08, 0.16);
+hHair.rotation.x = -0.15;
+helperGroup.add(hHair);
+
+// 25명 이름 후보군
+const NAME_POOL = [
+  '시영', '영주', '시온', '설아', '석주',
+  '민지', '수민', '사랑', '보민', '형찬',
+  '세림', '인영', '여진', '기혁', '찬',
+  '다연', '세영', '서연', '지현', '희주',
+  '승호', '정원', '채령', '신희', '지유'
+];
+
+function shuffleArray(pool) {
+  const arr = [...pool];
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
+
+const npcConfigs2D = [
+  { x: 485, y: 365, shirt: '#6f9dbb' },
+  { x: 825, y: 385, shirt: '#e1ad68' },
+  { x: 260, y: 560, shirt: '#a78ac6' },
+  { x: 1035, y: 560, shirt: '#6b9c7d' },
+  { x: 545, y: 580, shirt: '#d47a84' },
+  { x: 780, y: 590, shirt: '#5e8b9e' }
+];
+
+let npcs = [];
+let speechQueue = [];
+let npcSpeechTimer = 0.8;
+let npcSpeechIndex = 0;
+
+function makeHeadFaceTexture(mood = 'shock') {
+  // 구(Sphere)의 UV 매핑에 맞춰 정면(+Z 방향)에 굴곡지게 밀착되는 1024x512 얼굴 텍스처
+  // headMesh.rotation.y = Math.PI / 2 회전 시 UV 중심(u=0.5, x=512)이 정확히 정면(+Z)에 위치
+  const w = 1024;
+  const h = 512;
+  const c = document.createElement('canvas');
+  c.width = w;
+  c.height = h;
+  const ctx = c.getContext('2d');
+
+  // 입체적 피부 톤 그라데이션 (단절된 경계선이 전혀 없는 전체 구 표면 매핑)
+  const skinGrad = ctx.createLinearGradient(0, 0, 0, h);
+  skinGrad.addColorStop(0, '#f5d2b3');
+  skinGrad.addColorStop(0.55, '#efc39f');
+  skinGrad.addColorStop(1, '#e0ae86');
+  ctx.fillStyle = skinGrad;
+  ctx.fillRect(0, 0, w, h);
+
+  const cx = 512;
+  const eyeY = 244;
+  const leftEyeX = cx - 54;
+  const rightEyeX = cx + 54;
+
+  // 콧대 부드러운 하이라이트
+  const noseGrad = ctx.createRadialGradient(cx, eyeY + 34, 2, cx, eyeY + 34, 28);
+  noseGrad.addColorStop(0, 'rgba(255, 245, 235, 0.45)');
+  noseGrad.addColorStop(1, 'rgba(239, 195, 159, 0)');
+  ctx.fillStyle = noseGrad;
+  ctx.beginPath();
+  ctx.ellipse(cx, eyeY + 34, 14, 30, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // 코 그림자
+  ctx.strokeStyle = 'rgba(168, 114, 78, 0.48)';
+  ctx.lineWidth = 4;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.arc(cx, eyeY + 56, 9, 0.15 * Math.PI, 0.85 * Math.PI);
+  ctx.stroke();
+
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+
+  if (mood === 'impressed') {
+    // 감동/안도 표정: 볼 홍조 + 부드러운 눈썹 + 반달 웃음눈 + 활짝 웃는 입
+    const cheekL = ctx.createRadialGradient(leftEyeX - 14, eyeY + 42, 4, leftEyeX - 14, eyeY + 42, 34);
+    cheekL.addColorStop(0, 'rgba(244, 63, 94, 0.34)');
+    cheekL.addColorStop(1, 'rgba(244, 63, 94, 0)');
+    ctx.fillStyle = cheekL;
+    ctx.beginPath();
+    ctx.arc(leftEyeX - 14, eyeY + 42, 34, 0, Math.PI * 2);
+    ctx.fill();
+
+    const cheekR = ctx.createRadialGradient(rightEyeX + 14, eyeY + 42, 4, rightEyeX + 14, eyeY + 42, 34);
+    cheekR.addColorStop(0, 'rgba(244, 63, 94, 0.34)');
+    cheekR.addColorStop(1, 'rgba(244, 63, 94, 0)');
+    ctx.fillStyle = cheekR;
+    ctx.beginPath();
+    ctx.arc(rightEyeX + 14, eyeY + 42, 34, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.strokeStyle = '#3b281e';
+    ctx.lineWidth = 7;
+    ctx.beginPath();
+    ctx.arc(leftEyeX, eyeY - 22, 24, Math.PI * 1.18, Math.PI * 1.82);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(rightEyeX, eyeY - 22, 24, Math.PI * 1.18, Math.PI * 1.82);
+    ctx.stroke();
+
+    ctx.strokeStyle = '#1e293b';
+    ctx.lineWidth = 8.5;
+    ctx.beginPath();
+    ctx.arc(leftEyeX, eyeY + 8, 20, Math.PI * 1.12, Math.PI * 1.88);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(rightEyeX, eyeY + 8, 20, Math.PI * 1.12, Math.PI * 1.88);
+    ctx.stroke();
+
+    ctx.fillStyle = '#e11d48';
+    ctx.strokeStyle = '#881337';
+    ctx.lineWidth = 5;
+    ctx.beginPath();
+    ctx.arc(cx, eyeY + 74, 34, 0.1 * Math.PI, 0.9 * Math.PI);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+  } else if (mood === 'help') {
+    // 다급/요청 표정: 팔자 눈썹 + 커진 눈 + 다급히 외치는 입
+    ctx.strokeStyle = '#2c1d16';
+    ctx.lineWidth = 8;
+    ctx.beginPath();
+    ctx.moveTo(leftEyeX - 26, eyeY - 34);
+    ctx.lineTo(leftEyeX + 22, eyeY - 18);
+    ctx.moveTo(rightEyeX + 26, eyeY - 34);
+    ctx.lineTo(rightEyeX - 22, eyeY - 18);
+    ctx.stroke();
+
+    ctx.fillStyle = '#ffffff';
+    ctx.strokeStyle = '#334155';
+    ctx.lineWidth = 4.5;
+    ctx.beginPath();
+    ctx.ellipse(leftEyeX, eyeY, 22, 20, 0, 0, Math.PI * 2);
+    ctx.ellipse(rightEyeX, eyeY, 22, 20, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.fillStyle = '#0f172a';
+    ctx.beginPath();
+    ctx.arc(leftEyeX + 2, eyeY + 1, 11, 0, Math.PI * 2);
+    ctx.arc(rightEyeX - 2, eyeY + 1, 11, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.arc(leftEyeX - 2, eyeY - 4, 4, 0, Math.PI * 2);
+    ctx.arc(rightEyeX - 6, eyeY - 4, 4, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = '#991b1b';
+    ctx.strokeStyle = '#450a0a';
+    ctx.lineWidth = 5;
+    ctx.beginPath();
+    ctx.ellipse(cx, eyeY + 86, 22, 26, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+  } else {
+    // 기본 놀람 표정: 놀란 눈썹 + 또렷한 눈 + 작은 'o' 입
+    ctx.strokeStyle = '#2c1d16';
+    ctx.lineWidth = 7.5;
+    ctx.beginPath();
+    ctx.moveTo(leftEyeX - 24, eyeY - 28);
+    ctx.quadraticCurveTo(leftEyeX, eyeY - 42, leftEyeX + 24, eyeY - 28);
+    ctx.moveTo(rightEyeX - 24, eyeY - 28);
+    ctx.quadraticCurveTo(rightEyeX, eyeY - 42, rightEyeX + 24, eyeY - 28);
+    ctx.stroke();
+
+    ctx.fillStyle = '#ffffff';
+    ctx.strokeStyle = '#334155';
+    ctx.lineWidth = 4.5;
+    ctx.beginPath();
+    ctx.ellipse(leftEyeX, eyeY, 20, 18, 0, 0, Math.PI * 2);
+    ctx.ellipse(rightEyeX, eyeY, 20, 18, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.fillStyle = '#0f172a';
+    ctx.beginPath();
+    ctx.arc(leftEyeX, eyeY, 10, 0, Math.PI * 2);
+    ctx.arc(rightEyeX, eyeY, 10, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.arc(leftEyeX - 3.5, eyeY - 4, 3.8, 0, Math.PI * 2);
+    ctx.arc(rightEyeX - 3.5, eyeY - 4, 3.8, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = '#b91c1c';
+    ctx.strokeStyle = '#450a0a';
+    ctx.lineWidth = 4.5;
+    ctx.beginPath();
+    ctx.ellipse(cx, eyeY + 84, 14, 17, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+  }
+
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 4;
+  return tex;
+}
+
+const faceTextures = {
+  shock: makeHeadFaceTexture('shock'),
+  help: makeHeadFaceTexture('help'),
+  impressed: makeHeadFaceTexture('impressed')
+};
+
+const HAIR_COLORS = ['#1e293b', '#3b2820', '#4a3525', '#27272a', '#5c3d2e', '#1f2937'];
+const PANTS_COLORS = ['#1e3a5f', '#334155', '#27272a', '#3f3f46', '#1e293b', '#475569'];
+
+function createNPCMesh(shirtHex, idx = 0) {
+  const g = new THREE.Group();
+  const skinMat = new THREE.MeshStandardMaterial({ color: '#efc39f', roughness: 0.62 });
+  const shirtMat = new THREE.MeshStandardMaterial({ color: shirtHex, roughness: 0.65 });
+  const pantsMat = new THREE.MeshStandardMaterial({ color: PANTS_COLORS[idx % PANTS_COLORS.length], roughness: 0.72 });
+  const shoeMat = new THREE.MeshStandardMaterial({ color: '#f8fafc', roughness: 0.5 });
+  const hairMat = new THREE.MeshStandardMaterial({ color: HAIR_COLORS[idx % HAIR_COLORS.length], roughness: 0.75 });
+
+  // 1. 다리 & 신발
+  [-0.105, 0.105].forEach(lx => {
+    const leg = new THREE.Mesh(new THREE.CapsuleGeometry(0.078, 0.56, 8, 12), pantsMat);
+    leg.position.set(lx, 0.40, 0);
+    leg.castShadow = true;
+    g.add(leg);
+
+    const shoe = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.09, 0.24), shoeMat);
+    shoe.position.set(lx, 0.045, 0.04);
+    shoe.castShadow = true;
+    g.add(shoe);
+  });
+
+  // 2. 상체
+  const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.19, 0.44, 10, 16), shirtMat);
+  torso.scale.set(1.12, 1.0, 0.76);
+  torso.position.set(0, 0.98, 0);
+  torso.castShadow = true;
+  g.add(torso);
+
+  // 목
+  const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.068, 0.078, 0.14, 14), skinMat);
+  neck.position.set(0, 1.32, 0);
+  g.add(neck);
+
+  // 3. 양팔
+  const leftArmPivot = new THREE.Group();
+  leftArmPivot.position.set(-0.24, 1.21, 0);
+  g.add(leftArmPivot);
+
+  const leftArm = new THREE.Mesh(new THREE.CapsuleGeometry(0.058, 0.44, 8, 12), shirtMat);
+  leftArm.position.set(0, -0.22, 0);
+  leftArm.castShadow = true;
+  leftArmPivot.add(leftArm);
+
+  const leftHand = new THREE.Mesh(new THREE.SphereGeometry(0.058, 12, 12), skinMat);
+  leftHand.position.set(0, -0.47, 0);
+  leftArmPivot.add(leftHand);
+  leftArmPivot.rotation.z = 0.12;
+
+  const rightArmPivot = new THREE.Group();
+  rightArmPivot.position.set(0.24, 1.21, 0);
+  g.add(rightArmPivot);
+
+  const rightArm = new THREE.Mesh(new THREE.CapsuleGeometry(0.058, 0.44, 8, 12), shirtMat);
+  rightArm.position.set(0, -0.22, 0);
+  rightArm.castShadow = true;
+  rightArmPivot.add(rightArm);
+
+  const rightHand = new THREE.Mesh(new THREE.SphereGeometry(0.058, 12, 12), skinMat);
+  rightHand.position.set(0, -0.47, 0);
+  rightArmPivot.add(rightHand);
+  rightArmPivot.rotation.z = -0.12;
+
+  // 4. 머리 그룹 (3D 구 곡면 자체에 표정 텍스처를 직접 매핑하여 평면 경계선이 전혀 없이 자연스럽게 굴곡짐)
+  const headGroup = new THREE.Group();
+  headGroup.position.set(0, 1.54, 0);
+  g.add(headGroup);
+
+  const headMat = new THREE.MeshStandardMaterial({
+    map: faceTextures.shock,
+    roughness: 0.62,
+    metalness: 0.02
+  });
+  const headMesh = new THREE.Mesh(new THREE.SphereGeometry(0.205, 32, 24), headMat);
+  headMesh.scale.set(0.95, 1.06, 0.98);
+  headMesh.rotation.y = Math.PI / 2;
+  headMesh.castShadow = true;
+  headGroup.add(headMesh);
+
+  // 좌우 귀
+  [-0.195, 0.195].forEach(ex => {
+    const ear = new THREE.Mesh(new THREE.SphereGeometry(0.042, 12, 12), skinMat);
+    ear.scale.set(0.55, 1.15, 0.8);
+    ear.position.set(ex, -0.01, -0.01);
+    headGroup.add(ear);
+  });
+
+  // 입체 헤어스타일 (뒷머리 볼륨 + 자연스러운 앞머리 뱅)
+  const backHair = new THREE.Mesh(
+    new THREE.SphereGeometry(0.218, 24, 18, 0, Math.PI * 2, 0, Math.PI * 0.58),
+    hairMat
+  );
+  backHair.scale.set(0.98, 1.06, 1.02);
+  backHair.rotation.x = -0.42;
+  backHair.position.set(0, 0.025, -0.025);
+  headGroup.add(backHair);
+
+  const frontBangL = new THREE.Mesh(new THREE.SphereGeometry(0.11, 14, 12), hairMat);
+  frontBangL.scale.set(1.15, 0.55, 0.75);
+  frontBangL.position.set(-0.075, 0.155, 0.145);
+  frontBangL.rotation.set(0.35, -0.25, 0.22);
+  headGroup.add(frontBangL);
+
+  const frontBangR = new THREE.Mesh(new THREE.SphereGeometry(0.105, 14, 12), hairMat);
+  frontBangR.scale.set(1.1, 0.52, 0.72);
+  frontBangR.position.set(0.08, 0.158, 0.142);
+  frontBangR.rotation.set(0.35, 0.25, -0.22);
+  headGroup.add(frontBangR);
+
+  g.userData.headMat = headMat;
+  g.userData.headGroup = headGroup;
+  g.userData.leftArmPivot = leftArmPivot;
+  g.userData.rightArmPivot = rightArmPivot;
+  return g;
+}
+
+function setNPCExpression(npc, mood) {
+  if (!npc || !npc.mesh || !npc.mesh.userData.headMat) return;
+  const tex = faceTextures[mood] || faceTextures.shock;
+  if (npc.mesh.userData.headMat.map !== tex) {
+    npc.mesh.userData.headMat.map = tex;
+    npc.mesh.userData.headMat.needsUpdate = true;
+  }
+}
+
+function buildSpeechQueue() {
+  const indices = shuffleArray([0, 1, 2, 3, 4, 5]);
+  const urgentLines = ['도와주세요', '헬프!헬프!'];
+  const impressedNpcIdx = indices[Math.floor(Math.random() * indices.length)];
+
+  speechQueue = indices.map((npcIdx, order) => {
+    if (order === 0) {
+      return { npcIdx, text: '와 레알 큰일났네', duration: 2.7 };
+    }
+    if (isImproved && npcIdx === impressedNpcIdx) {
+      return { npcIdx, text: 'AED 위치 표시 <- 이부분 감동', duration: 3.4 };
+    }
+    return {
+      npcIdx,
+      text: urgentLines[order % urgentLines.length],
+      duration: 2.5
+    };
+  });
+  npcSpeechIndex = 0;
+  npcSpeechTimer = 0.8;
+}
+
+function initCharacters() {
+  // 기존 NPC DOM 말풍선 및 3D 메시 정리
+  npcs.forEach(n => {
+    scene.remove(n.mesh);
+    n.tagEl.remove();
+    n.bubbleEl.remove();
+  });
+  npcs = [];
+
+  const picked = shuffleArray(NAME_POOL).slice(0, 7);
+  PATIENT_2D.name = picked[6];
+
+  npcs = npcConfigs2D.map((cfg, idx) => {
+    const mesh = createNPCMesh(cfg.shirt, idx);
+    const wx = to3DX(cfg.x);
+    const wz = to3DZ(cfg.y);
+    mesh.position.set(wx, 0, wz);
+    scene.add(mesh);
+
+    const tagEl = document.createElement('div');
+    tagEl.className = 'npc-tag';
+    tagEl.textContent = picked[idx];
+    bubblesLayer.appendChild(tagEl);
+
+    const bubbleEl = document.createElement('div');
+    bubbleEl.className = 'npc-bubble';
+    bubbleEl.style.display = 'none';
+    bubblesLayer.appendChild(bubbleEl);
+
+    return {
+      x2d: cfg.x,
+      y2d: cfg.y,
+      wx,
+      wz,
+      name: picked[idx],
+      mesh,
+      tagEl,
+      bubbleEl,
+      bubble: '',
+      bubbleTimer: 0,
+      msgBefore: `${PATIENT_2D.name} 학생이 쓰러졌는데 AED가 어디 있는지 도통 안 보여요!`,
+      msgAfter: `${PATIENT_2D.name} 학생 쪽엔 바닥 빨간 화살표를 따라 오른쪽 복도 코너를 돌아가면 돼요!`
+    };
+  });
+
+  buildSpeechQueue();
+
+  document.getElementById('objective').textContent =
+    `학생회관 1층에서 ${PATIENT_2D.name} 학생이 쓰러졌습니다. AED를 찾아 ${PATIENT_2D.name} 학생에게 전달하세요.`;
+  document.getElementById('introDesc').textContent =
+    `학생회관 1층 로비에서 ${PATIENT_2D.name} 학생이 쓰러졌습니다. 1인칭 시야로 이동하며 AED를 찾아 ${PATIENT_2D.name} 학생에게 가져다주세요.`;
+}
+
+// 1인칭 플레이어 상태
+let started = false;
+let got = false;
+let done = false;
+let isImproved = true;
+let elapsedTime = 0;
+let toastTimer = 0;
+
+const player = {
+  x: to3DX(660),
+  z: to3DZ(680),
+  yaw: 0,      // 좌우 회전 (0 = -Z 북쪽 정면)
+  pitch: 0,    // 상하 시선
+  speed: 6.2,
+  radius: 0.45
+};
+
+const keys = {};
+let isDragging = false;
+let prevMouseX = 0;
+let prevMouseY = 0;
+
+function isBlocked3D(nx, nz) {
+  const r = player.radius;
+  if (nx - r < -WORLD_W / 2 + 0.85 || nx + r > WORLD_W / 2 - 0.85) return true;
+  if (nz - r < -WORLD_D / 2 + 0.85 || nz + r > WORLD_D / 2 - 0.85) return true;
+
+  for (const c of colliders) {
+    if (nx + r > c.minX && nx - r < c.maxX && nz + r > c.minZ && nz - r < c.maxZ) {
+      return true;
+    }
+  }
+
+  // 4개 방 내부 진입 차단 (2D와 동일한 구역)
+  const x2d = (nx + WORLD_W / 2) / SCALE_2D_TO_3D;
+  const y2d = (nz + WORLD_D / 2) / SCALE_2D_TO_3D;
+  if (x2d < 302 && y2d < 278 || x2d > 1018 && y2d < 278 || x2d < 272 && y2d > 645 || x2d > 1048 && y2d > 645) {
+    return true;
+  }
+  return false;
+}
+
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 2600);
+}
+
+function getNearbyTargets() {
+  const px2d = (player.x + WORLD_W / 2) / SCALE_2D_TO_3D;
+  const py2d = (player.z + WORLD_D / 2) / SCALE_2D_TO_3D;
+
+  const distAED = Math.hypot(px2d - AED_2D.x, py2d - AED_2D.y);
+  const distPatient = Math.hypot(px2d - PATIENT_2D.x, py2d - PATIENT_2D.y);
+
+  let nearestNPC = null;
+  let minNpcDist = 78;
+  for (const n of npcs) {
+    const d = Math.hypot(px2d - n.x2d, py2d - n.y2d);
+    if (d < minNpcDist) {
+      minNpcDist = d;
+      nearestNPC = n;
+    }
+  }
+
+  return { distAED, distPatient, nearestNPC };
+}
+
+function interact() {
+  if (!started || done) return;
+  const { distAED, distPatient, nearestNPC } = getNearbyTargets();
+
+  if (!got && distAED < 88) {
+    got = true;
+    aedBeacon.visible = false;
+    document.getElementById('objective').textContent =
+      `AED를 확보했습니다! ${PATIENT_2D.name} 학생이 있는 로비 중앙으로 돌아가세요.`;
+    document.getElementById('phase').textContent = '목표 2 / 2 · 환자에게 전달';
+    toast(`AED를 확보했습니다! ${PATIENT_2D.name} 학생에게 신속히 전달하세요.`);
+    return;
+  }
+
+  if (got && distPatient < 95) {
+    done = true;
+    if (document.pointerLockElement === canvas) {
+      document.exitPointerLock();
+    }
+    document.getElementById('completeTitle').textContent = `AED를 ${PATIENT_2D.name} 학생에게 전달했습니다.`;
+    document.getElementById('resMode').textContent = isImproved ? '개선된 안내체계 (After)' : '기존 안내체계 (Before)';
+    document.getElementById('resTime').textContent = elapsedTime.toFixed(1) + '초';
+    document.getElementById('complete').style.display = 'flex';
+    return;
+  }
+
+  if (nearestNPC) {
+    const line = isImproved ? nearestNPC.msgAfter : nearestNPC.msgBefore;
+    nearestNPC.bubble = line;
+    nearestNPC.bubbleTimer = 3.2;
+    setNPCExpression(nearestNPC, isImproved ? 'impressed' : 'help');
+    toast(`[${nearestNPC.name}] "${line}"`);
+    return;
+  }
+
+  if (!got) {
+    toast(isImproved
+      ? '벽면의 빨간색 AED 안내판과 바닥 화살표를 따라가세요.'
+      : '가벽 뒤편과 복도 구석을 직접 둘러보며 AED를 찾아보세요.');
+  } else {
+    toast(`${PATIENT_2D.name} 학생이 있는 로비 중앙으로 이동하세요.`);
+  }
+}
+
+function updateSpeech(dt) {
+  npcs.forEach(n => {
+    if (n.bubbleTimer > 0) {
+      n.bubbleTimer -= dt;
+      if (n.bubbleTimer <= 0) {
+        n.bubbleTimer = 0;
+        n.bubble = '';
+      }
+    }
+  });
+
+  npcSpeechTimer -= dt;
+  if (npcSpeechTimer <= 0 && speechQueue.length > 0) {
+    const item = speechQueue[npcSpeechIndex % speechQueue.length];
+    const target = npcs[item.npcIdx];
+    if (target) {
+      target.bubble = item.text;
+      target.bubbleTimer = item.duration;
+      if (item.text.includes('감동')) {
+        setNPCExpression(target, 'impressed');
+      } else if (item.text.includes('헬프') || item.text.includes('도와')) {
+        setNPCExpression(target, 'help');
+      } else {
+        setNPCExpression(target, 'shock');
+      }
+    }
+    npcSpeechIndex++;
+    npcSpeechTimer = 2.0;
+  }
+}
+
+function updatePlayer(dt, t) {
+  if (!started || done) return;
+  elapsedTime += dt;
+  document.getElementById('timer').textContent = elapsedTime.toFixed(1) + '초';
+
+  // 키보드 좌우 시점 회전 (Q / E 또는 좌우 화살표 외에 J/L도 지원)
+  const turnSpeed = 2.1;
+  if (keys.KeyQ || keys.KeyJ) player.yaw += turnSpeed * dt;
+  if (keys.KeyE || keys.KeyL) player.yaw -= turnSpeed * dt;
+
+  // 전진/후진/좌우 이동 (카메라 yaw 기준)
+  let forward = 0;
+  let right = 0;
+  if (keys.KeyW || keys.ArrowUp) forward += 1;
+  if (keys.KeyS || keys.ArrowDown) forward -= 1;
+  if (keys.KeyD || keys.ArrowRight) right += 1;
+  if (keys.KeyA || keys.ArrowLeft) right -= 1;
+
+  if (forward !== 0 || right !== 0) {
+    const len = Math.hypot(forward, right);
+    forward /= len;
+    right /= len;
+
+    // 3D에서 yaw=0일 때 전방은 (0, 0, -1), 우측은 (1, 0, 0)
+    const fwdX = -Math.sin(player.yaw);
+    const fwdZ = -Math.cos(player.yaw);
+    const rgtX = Math.cos(player.yaw);
+    const rgtZ = -Math.sin(player.yaw);
+
+    const moveX = (fwdX * forward + rgtX * right) * player.speed * dt;
+    const moveZ = (fwdZ * forward + rgtZ * right) * player.speed * dt;
+
+    if (!isBlocked3D(player.x + moveX, player.z)) player.x += moveX;
+    if (!isBlocked3D(player.x, player.z + moveZ)) player.z += moveZ;
+  }
+
+  // 미세한 걷기 흔들림
+  const bobOffset = (forward !== 0 || right !== 0) ? Math.sin(t * 0.014) * 0.055 : 0;
+  camera.position.set(player.x, EYE_HEIGHT + bobOffset, player.z);
+
+  const euler = new THREE.Euler(player.pitch, player.yaw, 0, 'YXZ');
+  camera.quaternion.setFromEuler(euler);
+
+  // AED 비콘 회전 애니메이션
+  if (!got) {
+    aedBeacon.rotation.y += 2.2 * dt;
+    aedBeacon.position.y = 2.25 + Math.sin(t * 0.005) * 0.08;
+  }
+
+  // 상호작용 가능 여부 프롬프트 갱신
+  const { distAED, distPatient, nearestNPC } = getNearbyTargets();
+  const promptBox = document.getElementById('promptBox');
+  const crosshair = document.getElementById('crosshair');
+
+  if (!got && distAED < 88) {
+    promptBox.style.display = 'block';
+    promptBox.textContent = '[F] 또는 [스페이스]를 눌러 AED 확보하기';
+    crosshair.classList.add('active');
+  } else if (got && distPatient < 95) {
+    promptBox.style.display = 'block';
+    promptBox.textContent = `[F] 또는 [스페이스]를 눌러 ${PATIENT_2D.name} 학생에게 AED 전달하기`;
+    crosshair.classList.add('active');
+  } else if (nearestNPC) {
+    promptBox.style.display = 'block';
+    promptBox.textContent = `[F] ${nearestNPC.name}에게 안내 묻기`;
+    crosshair.classList.add('active');
+  } else {
+    promptBox.style.display = 'none';
+    crosshair.classList.remove('active');
+  }
+}
+
+function projectToScreen(vec3) {
+  const v = vec3.clone().project(camera);
+  if (v.z > 1) return null;
+  return {
+    x: (v.x * 0.5 + 0.5) * window.innerWidth,
+    y: (-v.y * 0.5 + 0.5) * window.innerHeight
+  };
+}
+
+function updateOverlays3D(t) {
+  npcs.forEach(n => {
+    const bob = Math.sin(t * 0.004 + n.x2d) * 0.05;
+    n.mesh.position.y = bob;
+    // NPC 몸체가 플레이어 쪽을 자연스럽게 향하게 회전
+    const angleToPlayer = Math.atan2(player.x - n.wx, player.z - n.wz);
+    n.mesh.rotation.y = angleToPlayer;
+    if (n.mesh.userData.headGroup) {
+      n.mesh.userData.headGroup.rotation.y = Math.sin(t * 0.0022 + n.x2d) * 0.12;
+      n.mesh.userData.headGroup.rotation.x = Math.sin(t * 0.003 + n.y2d) * 0.04;
+    }
+    const isTalking = n.bubbleTimer > 0;
+    const wave = isTalking ? Math.sin(t * 0.012 + n.x2d) * 0.22 : Math.sin(t * 0.003 + n.x2d) * 0.04;
+    if (n.mesh.userData.leftArmPivot && n.mesh.userData.rightArmPivot) {
+      n.mesh.userData.leftArmPivot.rotation.x = isTalking ? -0.35 + wave : wave;
+      n.mesh.userData.rightArmPivot.rotation.x = isTalking ? -0.35 - wave : -wave;
+    }
+    if (n.bubbleTimer <= 0) {
+      setNPCExpression(n, 'shock');
+    }
+
+    const headPos = new THREE.Vector3(n.wx, 1.85 + bob, n.wz);
+    const screenPos = projectToScreen(headPos);
+
+    if (!screenPos || screenPos.x < -80 || screenPos.x > window.innerWidth + 80 || screenPos.y < -60 || screenPos.y > window.innerHeight + 60) {
+      n.tagEl.style.display = 'none';
+      n.bubbleEl.style.display = 'none';
+      return;
+    }
+
+    n.tagEl.style.display = 'block';
+    n.tagEl.style.left = `${screenPos.x}px`;
+    n.tagEl.style.top = `${screenPos.y + 8}px`;
+
+    if (n.bubble && n.bubbleTimer > 0) {
+      n.bubbleEl.style.display = 'block';
+      n.bubbleEl.textContent = `${n.name}: ${n.bubble}`;
+      n.bubbleEl.style.left = `${screenPos.x}px`;
+      n.bubbleEl.style.top = `${screenPos.y - 10}px`;
+      if (n.bubble.includes('감동')) {
+        n.bubbleEl.classList.add('impressed');
+      } else {
+        n.bubbleEl.classList.remove('impressed');
+      }
+    } else {
+      n.bubbleEl.style.display = 'none';
+    }
+  });
+}
+
+function drawMinimap() {
+  const w = miniCanvas.width;
+  const h = miniCanvas.height;
+  miniCtx.clearRect(0, 0, w, h);
+
+  miniCtx.fillStyle = 'rgba(20, 44, 64, 0.88)';
+  miniCtx.fillRect(0, 0, w, h);
+
+  const mapX = 12;
+  const mapY = 24;
+  const mapW = w - 24;
+  const mapH = h - 42;
+
+  miniCtx.fillStyle = '#dfe5df';
+  miniCtx.fillRect(mapX, mapY, mapW, mapH);
+
+  // 중앙 로비 구역
+  miniCtx.fillStyle = '#c5d6d7';
+  miniCtx.fillRect(mapX + mapW * 0.24, mapY, mapW * 0.52, mapH);
+
+  // 가벽 미니 표시
+  miniCtx.fillStyle = '#7e9194';
+  miniCtx.fillRect(mapX + (350 / 1320) * mapW, mapY + (280 / 860) * mapH, 3, 18);
+  miniCtx.fillRect(mapX + (948 / 1320) * mapW, mapY + (280 / 860) * mapH, 3, 18);
+
+  // 개선된 안내체계일 때만 미니맵에 AED 위치 표시
+  if (isImproved && !got) {
+    miniCtx.fillStyle = '#d94343';
+    miniCtx.fillRect(
+      mapX + (AED_2D.x / 1320) * mapW - 4,
+      mapY + (AED_2D.y / 860) * mapH - 4,
+      8, 8
+    );
+  }
+
+  // 환자 마커
+  miniCtx.fillStyle = '#3b82f6';
+  miniCtx.beginPath();
+  miniCtx.arc(mapX + (PATIENT_2D.x / 1320) * mapW, mapY + (PATIENT_2D.y / 860) * mapH, 3.5, 0, Math.PI * 2);
+  miniCtx.fill();
+
+  // 플레이어 위치 및 시선 방향
+  const px2d = (player.x + WORLD_W / 2) / SCALE_2D_TO_3D;
+  const py2d = (player.z + WORLD_D / 2) / SCALE_2D_TO_3D;
+  const mx = mapX + (px2d / 1320) * mapW;
+  const my = mapY + (py2d / 860) * mapH;
+
+  miniCtx.strokeStyle = '#f5c451';
+  miniCtx.lineWidth = 1.8;
+  miniCtx.beginPath();
+  miniCtx.moveTo(mx, my);
+  miniCtx.lineTo(mx - Math.sin(player.yaw) * 10, my - Math.cos(player.yaw) * 10);
+  miniCtx.stroke();
+
+  miniCtx.fillStyle = '#f5c451';
+  miniCtx.beginPath();
+  miniCtx.arc(mx, my, 4, 0, Math.PI * 2);
+  miniCtx.fill();
+
+  miniCtx.fillStyle = '#d5e6ed';
+  miniCtx.font = '700 9px system-ui, sans-serif';
+  miniCtx.textAlign = 'center';
+  miniCtx.fillText(isImproved ? '1인칭 · AED 표시됨' : '1인칭 · AED 미표시', w / 2, h - 7);
+}
+
+function syncModeUI() {
+  improvedGuidesGroup.visible = isImproved;
+  beforeDistractorsGroup.visible = !isImproved;
+
+  const badge = document.getElementById('modeBadge');
+  const toggleBtn = document.getElementById('toggleMode');
+  const cardBefore = document.getElementById('cardBefore');
+  const cardAfter = document.getElementById('cardAfter');
+
+  if (isImproved) {
+    badge.textContent = '개선된 안내체계 (After)';
+    badge.className = 'mode-badge after';
+    toggleBtn.textContent = '버전 전환 (현재: 개선 후)';
+    toggleBtn.classList.remove('is-before');
+    cardAfter.classList.add('active', 'after-card');
+    cardBefore.classList.remove('active');
+  } else {
+    badge.textContent = '기존 안내체계 (Before)';
+    badge.className = 'mode-badge before';
+    toggleBtn.textContent = '버전 전환 (현재: 기존)';
+    toggleBtn.classList.add('is-before');
+    cardBefore.classList.add('active');
+    cardAfter.classList.remove('active', 'after-card');
+  }
+}
+
+function resetMission(keepStarted = true) {
+  player.x = to3DX(660);
+  player.z = to3DZ(680);
+  player.yaw = 0;
+  player.pitch = -0.05;
+  got = false;
+  done = false;
+  elapsedTime = 0;
+  aedBeacon.visible = isImproved;
+
+  initCharacters();
+  document.getElementById('timer').textContent = '0.0초';
+  document.getElementById('phase').textContent = '목표 1 / 2 · AED 찾기';
+  document.getElementById('complete').style.display = 'none';
+  syncModeUI();
+
+  if (keepStarted) {
+    started = true;
+    toast(isImproved
+      ? '[개선 후 · 1인칭] 벽면 안내판과 바닥 유도 스티커를 따라가세요.'
+      : '[기존 체계 · 1인칭] 안내 표지 없이 가벽과 복도 구석을 직접 탐색해 보세요.');
+  }
+}
+
+let lastTime = performance.now();
+function animate(now) {
+  const dt = Math.min((now - lastTime) / 1000 || 0, 0.05);
+  lastTime = now;
+
+  updateSpeech(dt);
+  updatePlayer(dt, now);
+  updateOverlays3D(now);
+  renderer.render(scene, camera);
+  drawMinimap();
+
+  requestAnimationFrame(animate);
+}
+
+initCharacters();
+syncModeUI();
+requestAnimationFrame(animate);
+
+// 마우스 시점 회전 (드래그 & 포인터 락 모두 지원)
+canvas.addEventListener('mousedown', e => {
+  if (!started || done) return;
+  isDragging = true;
+  prevMouseX = e.clientX;
+  prevMouseY = e.clientY;
+});
+
+window.addEventListener('mouseup', () => {
+  isDragging = false;
+});
+
+window.addEventListener('mousemove', e => {
+  if (!started || done) return;
+  if (document.pointerLockElement === canvas) {
+    player.yaw -= e.movementX * 0.0024;
+    player.pitch = Math.max(-0.65, Math.min(0.65, player.pitch - e.movementY * 0.002));
+  } else if (isDragging) {
+    const dx = e.clientX - prevMouseX;
+    const dy = e.clientY - prevMouseY;
+    prevMouseX = e.clientX;
+    prevMouseY = e.clientY;
+    player.yaw -= dx * 0.0045;
+    player.pitch = Math.max(-0.65, Math.min(0.65, player.pitch - dy * 0.0035));
+  }
+});
+
+// 더블클릭 시 포인터 락 시점 모드 진입
+canvas.addEventListener('dblclick', () => {
+  if (started && !done && canvas.requestPointerLock) {
+    canvas.requestPointerLock().catch(() => {});
+  }
+});
+
+// 터치 스와이프 시점 회전 지원
+let touchLastX = null;
+let touchLastY = null;
+canvas.addEventListener('touchstart', e => {
+  if (e.touches.length === 1) {
+    touchLastX = e.touches[0].clientX;
+    touchLastY = e.touches[0].clientY;
+  }
+}, { passive: true });
+
+canvas.addEventListener('touchmove', e => {
+  if (e.touches.length === 1 && touchLastX !== null) {
+    const tx = e.touches[0].clientX;
+    const ty = e.touches[0].clientY;
+    player.yaw -= (tx - touchLastX) * 0.006;
+    player.pitch = Math.max(-0.65, Math.min(0.65, player.pitch - (ty - touchLastY) * 0.0045));
+    touchLastX = tx;
+    touchLastY = ty;
+  }
+}, { passive: true });
+
+document.addEventListener('keydown', e => {
+  if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) {
+    e.preventDefault();
+  }
+  keys[e.code] = true;
+  if (e.code === 'KeyF' || e.code === 'Space') {
+    interact();
+  }
+});
+
+document.addEventListener('keyup', e => {
+  keys[e.code] = false;
+});
+
+document.getElementById('cardBefore').onclick = () => { isImproved = false; syncModeUI(); };
+document.getElementById('cardAfter').onclick = () => { isImproved = true; syncModeUI(); };
+
+document.getElementById('toggleMode').onclick = () => {
+  isImproved = !isImproved;
+  resetMission(true);
+};
+
+document.getElementById('start').onclick = () => {
+  document.getElementById('intro').style.display = 'none';
+  resetMission(true);
+};
+
+document.getElementById('reset').onclick = () => resetMission(true);
+document.getElementById('again').onclick = () => resetMission(true);
+document.getElementById('switchAndAgain').onclick = () => {
+  isImproved = !isImproved;
+  resetMission(true);
+};
+
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+</script>
+</body>
+</html>
